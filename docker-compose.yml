@@ -1,0 +1,12 @@
+services:
+  print-orders:
+    build: .
+    container_name: print-orders
+    ports:
+      - "3000:3000"
+    volumes:
+      - print-orders-data:/data
+    restart: unless-stopped
+
+volumes:
+  print-orders-data:

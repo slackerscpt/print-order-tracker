@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Print Order Queue</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--text:#1d1d1b;--muted:#6b6a65;--line:#e3e1db;--accent:#2f6fed;--accent-t:#fff;--ok:#1f8a4c;--okbg:#e5f4eb;--warn:#b45309;--danger:#c0392b;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161615;--card:#222220;--text:#efede8;--muted:#a09e97;--line:#38372f;--accent:#6b9bff;--accent-t:#0d1b3a;--ok:#5fcf8c;--okbg:#18301f;--warn:#f0a050;--danger:#ff7a6b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161615;--card:#222220;--text:#efede8;--muted:#a09e97;--line:#38372f;--accent:#6b9bff;--accent-t:#0d1b3a;--ok:#5fcf8c;--okbg:#18301f;--warn:#f0a050;--danger:#ff7a6b;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+input,textarea{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 12px}
+button.primary{background:var(--accent);color:var(--accent-t);border-color:var(--accent);font-weight:600}
+button.ok{background:var(--ok);color:var(--bg);border-color:var(--ok);font-weight:600}
+button.link{border:none;background:none;color:var(--muted);padding:4px 6px}
+button.link.del:hover{color:var(--danger)}
+.row{display:grid;grid-template-columns:1fr 70px 1fr 34px;gap:6px;margin-bottom:6px}
+.hdr{font-size:12px;color:var(--muted);margin-bottom:2px}
+.top{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px}
+.tabs{display:flex;gap:6px;margin:14px 0 10px}
+.tabs button.on{background:var(--accent);color:var(--accent-t);border-color:var(--accent)}
+.oh{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px}
+.oh b{font-size:18px}
+.meta{color:var(--muted);font-size:13px}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:var(--ok)}
+.line{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.line input[type=checkbox]{width:22px;height:22px;flex:none;accent-color:var(--ok)}
+.line .t{flex:1}
+.line.done .t{text-decoration:line-through;color:var(--muted)}
+.qty{font-weight:700;min-width:34px}
+.chip{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:99px;padding:1px 8px;margin-left:6px;color:var(--muted)}
+.acts{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.badge{font-size:12px;font-weight:700;color:var(--ok);background:var(--okbg);border-radius:99px;padding:2px 10px}
+.empty{text-align:center;color:var(--muted);padding:28px 8px}
+.note{font-size:13px;color:var(--warn);margin-bottom:8px}
+@media (max-width:520px){.row{grid-template-columns:1fr 56px 1fr 34px}}
+</style>
+</head>
+<body>
+<main>
+<h1>Print Order Queue</h1>
+<div id="warn"></div>
+
+<div class="card">
+  <div class="top">
+    <input id="cust" placeholder="Customer name" autocomplete="off">
+    <input id="note" placeholder="Notes or due date (optional)" autocomplete="off">
+  </div>
+  <div class="hdr row" style="grid-template-columns:1fr 70px 1fr 34px"><span>Print</span><span>Qty</span><span>Color (if needed)</span><span></span></div>
+  <div id="rows"></div>
+  <div class="acts">
+    <button id="addRow">+ Add line</button>
+    <button id="save" class="primary">Add order to queue</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button id="tabA" class="on">In queue (0)</button>
+  <button id="tabD">Delivered (0)</button>
+</div>
+<div id="list"></div>
+</main>
+
+<script>
+(function(){
+  var orders=[], tab='active', store=null, ready=false;
+  var $=function(id){return document.getElementById(id)};
+  var rowsEl=$('rows');
+
+  function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+  function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+
+  /* ---- entry form ---- */
+  function addFormRow(){
+    var r=el('div','row');
+    var n=el('input');n.placeholder='e.g. Phone stand';n.setAttribute('data-k','name');
+    var q=el('input');q.type='number';q.min='1';q.value='1';q.setAttribute('data-k','qty');
+    var c=el('input');c.placeholder='e.g. Black';c.setAttribute('data-k','color');
+    var x=el('button','link','✕');x.title='Remove line';
+    x.onclick=function(){if(rowsEl.children.length>1)r.remove()};
+    r.append(n,q,c,x);rowsEl.appendChild(r);
+  }
+  $('addRow').onclick=function(){addFormRow();rowsEl.lastChild.querySelector('input').focus()};
+  function resetForm(){$('cust').value='';$('note').value='';rowsEl.innerHTML='';addFormRow()}
+
+  $('save').onclick=function(){
+    var cust=$('cust').value.trim();
+    var items=[];
+    Array.prototype.forEach.call(rowsEl.children,function(r){
+      var name=r.querySelector('[data-k=name]').value.trim();
+      if(!name)return;
+      items.push({name:name,qty:Math.max(1,parseInt(r.querySelector('[data-k=qty]').value,10)||1),color:r.querySelector('[data-k=color]').value.trim(),printed:false});
+    });
+    if(!cust){$('cust').focus();return}
+    if(!items.length){rowsEl.querySelector('input').focus();return}
+    persist({id:uid(),customer:cust,note:$('note').value.trim(),items:items,delivered:false,created:Date.now()});
+    resetForm();tab='active';render();
+  };
+
+  /* ---- storage (talks to the server, which writes to the Docker volume) ---- */
+  var pending=0;
+  function api(method,url,body){
+    pending++;
+    return fetch(url,{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+      .finally(function(){pending--});
+  }
+  function fail(e){console.error(e);$('warn').className='note';$('warn').textContent='Could not save that change. Check that the server is running.'}
+  function persist(o){
+    var i=orders.findIndex(function(x){return x.id===o.id});
+    if(i>=0)orders[i]=o;else orders.unshift(o);
+    render();
+    api('PUT','/api/orders/'+o.id,o).catch(fail);
+  }
+  function remove(o){
+    orders=orders.filter(function(x){return x.id!==o.id});render();
+    api('DELETE','/api/orders/'+o.id).catch(fail);
+  }
+
+  /* ---- render ---- */
+  function clone(o){return JSON.parse(JSON.stringify(o))}
+  function render(){
+    var act=orders.filter(function(o){return !o.delivered});
+    var del=orders.filter(function(o){return o.delivered});
+    $('tabA').textContent='In queue ('+act.length+')';
+    $('tabD').textContent='Delivered ('+del.length+')';
+    $('tabA').className=tab==='active'?'on':'';
+    $('tabD').className=tab==='delivered'?'on':'';
+    var list=tab==='active'?act.slice().sort(function(a,b){return a.created-b.created}):del.slice().sort(function(a,b){return (b.deliveredAt||0)-(a.deliveredAt||0)});
+    var box=$('list');box.innerHTML='';
+    if(!list.length){
+      box.appendChild(el('div','empty',tab==='active'?(ready?'No open orders. Add one above.':'Loading…'):'Nothing delivered yet.'));
+      return;
+    }
+    list.forEach(function(o){box.appendChild(card(o))});
+  }
+
+  function card(o){
+    var c=el('div','card');
+    var total=o.items.length,done=o.items.filter(function(i){return i.printed}).length;
+    var h=el('div','oh');
+    var l=el('div');
+    l.appendChild(el('b',null,o.customer));
+    var m=el('div','meta',new Date(o.created).toLocaleDateString(undefined,{month:'short',day:'numeric'})+(o.note?' · '+o.note:''));
+    l.appendChild(m);h.appendChild(l);
+    if(o.delivered)h.appendChild(el('span','badge','✓ Delivered'));
+    else h.appendChild(el('span','meta',done+' of '+total+' printed'));
+    c.appendChild(h);
+    if(!o.delivered){var b=el('div','bar'),f=el('i');f.style.width=(total?done/total*100:0)+'%';b.appendChild(f);c.appendChild(b)}
+    o.items.forEach(function(it,idx){
+      var ln=el('label','line'+(it.printed?' done':''));
+      var cb=el('input');cb.type='checkbox';cb.checked=!!it.printed;cb.disabled=!!o.delivered;
+      cb.onchange=function(){var n=clone(o);n.items[idx].printed=cb.checked;persist(n)};
+      var t=el('span','t');
+      t.appendChild(el('span','qty',it.qty+'×'));
+      t.appendChild(document.createTextNode(' '+it.name));
+      if(it.color)t.appendChild(el('span','chip',it.color));
+      ln.append(cb,t);c.appendChild(ln);
+    });
+    var a=el('div','acts');
+    if(!o.delivered){
+      var d=el('button',done===total?'ok':'','Mark delivered');
+      d.onclick=function(){
+        if(done<total&&!confirm('Some lines are not marked printed yet. Mark this order delivered anyway?'))return;
+        var n=clone(o);n.delivered=true;n.deliveredAt=Date.now();n.items.forEach(function(i){i.printed=true});persist(n);
+      };
+      a.appendChild(d);
+    }else{
+      var u=el('button','link','Move back to queue');
+      u.onclick=function(){var n=clone(o);n.delivered=false;delete n.deliveredAt;persist(n)};
+      a.appendChild(u);
+    }
+    var x=el('button','link del','Delete');
+    x.onclick=function(){if(confirm('Delete this order for '+o.customer+'? This can’t be undone.'))remove(o)};
+    a.appendChild(x);
+    c.appendChild(a);
+    return c;
+  }
+
+  $('tabA').onclick=function(){tab='active';render()};
+  $('tabD').onclick=function(){tab='delivered';render()};
+
+  /* ---- boot: load, then poll so other devices stay in sync ---- */
+  var last='';
+  function load(){
+    if(pending>0)return Promise.resolve();
+    return fetch('/api/orders').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(function(list){
+      if(pending>0)return;
+      $('warn').textContent='';$('warn').className='';
+      var s=JSON.stringify(list);
+      if(!ready||s!==last){last=s;orders=list;ready=true;render()}
+    }).catch(function(e){console.error(e);ready=true;$('warn').className='note';$('warn').textContent='Can’t reach the server.';render()});
+  }
+  resetForm();render();load();
+  setInterval(load,5000);
+})();
+</script>
+</body>
+</html>
